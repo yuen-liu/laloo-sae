@@ -5,14 +5,68 @@ This module handles loading latent vectors, GA rankings, and RMSD values,
 with proper normalization and train/validation/test splitting.
 """
 
+import os
+import pickle
+import glob
+import time
+from datetime import datetime as dt
 import numpy as np
-import pandas as pd
 import torch
+import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from typing import Tuple, Optional, Dict, Any
+from typing import List, Union, Tuple, Optional, Dict, Any
 import yaml
+
+from schrodinger.structure import StructureReader
+
+
+def load_latents(files: str) -> Tuple[torch.Tensor, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Loads latent vectors from .pkl files
+
+    Returns:
+        z_list: torch.Tensor; list of latent vectors
+        E_list: np.ndarray; list of energies for each latent vector (same order)
+        sr_list: np.ndarray; list of protein site rmsd for each latent vector (same order)
+        lr_list: np.ndarray; list of ligand rmsd for each latent vector (same order)
+        gen_list: np.ndarray; generation of GA each latent vector is from (same order)
+    """
+    z_list, E_list, sr_list, lr_list, gen_list = [], [], [], [], []
+    for file in files:
+        with open(file, 'rb') as f:
+            ld = pickle.load(f)
+        if 'site_rmsd' not in ld['scores']:
+            continue
+        if 'lig_rmsd' not in ld['scores']:
+            continue
+        z_list.append(ld['z'])
+        E_list.append(ld['scores']['energy'])
+        sr_list.append(ld['scores']['site_rmsd'])
+        lr_list.append(ld['scores']['lig_rmsd'])
+        gen_list.append(ld['curr_gen'])
+    z_list, E_list, sr_list, lr_list, gen_list = \
+        torch.stack(z_list), np.array(E_list), np.array(sr_list), \
+        np.array(lr_list), np.array(gen_list)
+    return z_list, E_list, sr_list, lr_list, gen_list
+
+
+def load_structure_data(file_path: str) -> List:
+    """
+    Load structure data from .maegz file using Schrodinger StructureReader.
+    
+    Args:
+        file_path: Path to the .maegz structure file
+        
+    Returns:
+        List of structures from the file
+    """
+    # Load single structure
+    st = StructureReader.read(file_path)
+    # Load all structures in file
+    st_list = [st for st in StructureReader(file_path)]
+    return st_list
 
 
 class DockingPoseDataset(Dataset):
@@ -80,6 +134,7 @@ def load_docking_data(data_path: str, config: Dict[str, Any]) -> Tuple[DataLoade
     """
     # Load data based on file extension
     if data_path.endswith('.csv'):
+        import pandas as pd
         df = pd.read_csv(data_path)
         latents = df[config['latent_columns']].values  # Assuming columns like 'latent_0', 'latent_1', etc.
         ga_rankings = df[config['ga_ranking_column']].values
@@ -173,5 +228,18 @@ def create_sample_data(output_path: str, n_samples: int = 12735, latent_dim: int
 
 
 if __name__ == "__main__":
-    # Create sample data for testing
-    create_sample_data("data/sample_docking_data.npz")
+    # Load latent vector data using the pattern from example.ipynb
+    files = sorted(glob.glob('pim1_4lmu_pim1_4bzo/pim1_4lmu_pim1_4bzo_optimization/*.pkl'))
+    z_list, E_list, sr_list, lr_list, gen_list = load_latents(files)
+    
+    print(f"Loaded {len(z_list)} latent vectors")
+    print(f"Latent vector shape: {z_list.shape}")
+    print(f"Energy range: {E_list.min():.2f} - {E_list.max():.2f}")
+    print(f"Site RMSD range: {sr_list.min():.2f} - {sr_list.max():.2f}")
+    print(f"Ligand RMSD range: {lr_list.min():.2f} - {lr_list.max():.2f}")
+    print(f"Generation range: {gen_list.min()} - {gen_list.max()}")
+    
+    # Example of loading structure data
+    # file = 'pim1_4lmu_pim1_4bzo/pim1_4lmu_pim1_4bzo_optimization/pim1_4lmu_pim1_4bzo_opt_R0-ALL-out.maegz'
+    # st_list = load_structure_data(file)
+    # print(f"Loaded {len(st_list)} structures")
