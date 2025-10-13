@@ -1,0 +1,114 @@
+# Configuration file for Sparse Autoencoder training and analysis
+# Protein-Ligand Docking Pose Analysis
+
+# Data configuration
+data:
+  # Path to data file (CSV or NPZ format)
+  data_path: "data/sample_docking_data.npz"
+  
+  # Data splitting ratios
+  train_size: 0.7
+  val_size: 0.15
+  test_size: 0.15
+  
+  # Batch size for training
+  batch_size: 64
+  
+  # Random seed for reproducibility
+  random_seed: 42
+  
+  # Column names (for CSV files)
+  latent_columns: ["latent_0", "latent_1", "latent_2", "latent_3", "latent_4", 
+                   "latent_5", "latent_6", "latent_7", "latent_8", "latent_9",
+                   "latent_10", "latent_11", "latent_12", "latent_13", "latent_14",
+                   "latent_15", "latent_16", "latent_17", "latent_18", "latent_19",
+                   "latent_20", "latent_21", "latent_22", "latent_23", "latent_24",
+                   "latent_25", "latent_26", "latent_27", "latent_28", "latent_29"]
+  ga_ranking_column: "ga_ranking"
+  rmsd_column: "rmsd"
+
+# Model configuration
+model:
+  # Input dimension (latent vector size)
+  input_dim: 30
+  
+  # Hidden layer dimension
+  hidden_dim: 64
+  
+  # Sparsity regularization strength (L1 penalty)
+  sparsity_lambda: 0.01
+  
+  # Dropout rate for regularization
+  dropout_rate: 0.1
+
+# Training configuration
+training:
+  # Number of training epochs
+  epochs: 100
+  
+  # Learning rate
+  learning_rate: 0.001
+  
+  # Weight decay for L2 regularization
+  weight_decay: 1e-5
+  
+  # Gradient clipping threshold (0 to disable)
+  grad_clip: 1.0
+  
+  # Early stopping configuration
+  early_stopping: true
+  patience: 20
+  
+  # Model saving directory
+  save_dir: "models"
+  
+  # Random seed for training
+  random_seed: 42
+
+# Analysis configuration
+analysis:
+  # Directory to save analysis results
+  results_dir: "results"
+  
+  # Number of top features to analyze
+  top_k_features: 20
+  
+  # Sparsity threshold for feature analysis
+  sparsity_threshold: 0.1
+  
+  # Number of PCA components for comparison
+  pca_components: 64
+  
+  # t-SNE parameters
+  tsne:
+    perplexity: 30
+    n_iter: 1000
+    random_state: 42
+
+# Visualization configuration
+visualization:
+  # Figure size for plots
+  figure_size: [12, 8]
+  
+  # DPI for saved plots
+  dpi: 300
+  
+  # Color palette
+  color_palette: "viridis"
+  
+  # Style
+  style: "whitegrid"
+
+# Experiment configuration
+experiment:
+  # Experiment name
+  name: "sae_docking_analysis"
+  
+  # Description
+  description: "Sparse Autoencoder analysis of protein-ligand docking poses"
+  
+  # Tags for organization
+  tags: ["sae", "docking", "protein", "ligand", "interpretability"]
+  
+  # Output directory
+  output_dir: "experiments"
