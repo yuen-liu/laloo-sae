@@ -9,7 +9,7 @@
 
 # Load schrodinger and activate environment
 module unload schrodinger; export SCHRODINGER=/cm/shared/apps/schrodinger/builds/NB/2025-4/build-011
-source /mnt/beegfs/home/friesner/yw4484/schrod_py_envs/schrod3_build_011/bin/activate
+source /mnt/beegfs/home/friesner/bgl2126/schrod_envs/laloosae/bin/activate
 
 # Tells programs how many CPUs are available
 export OMP_NUM_THREADS=$SLURM_NTASKS
