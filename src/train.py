@@ -1,400 +1,172 @@
-"""
-Training module for the Sparse Autoencoder.
-
-This module handles the training loop, loss tracking, validation,
-and model checkpointing for the protein-ligand docking pose analysis.
-"""
-
+"""Training utilities for SAE"""
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from tqdm import tqdm
 import os
-from typing import Dict, Any, List, Tuple
-import json
-from datetime import datetime
-
-from .model import SparseAutoencoder, PoseQualityPredictor
-from .utils import set_seed, save_checkpoint, load_checkpoint
+import numpy as np
 
 
-class Trainer:
+def train_sae(model, train_loader, val_loader, optimizer, device, max_epochs, 
+              k, hidden_dim, run_id, model_dir, use_wandb=False, wandb_project=None):
     """
-    Trainer class for the Sparse Autoencoder.
-    
-    Handles training loop, validation, loss tracking, and model checkpointing.
-    """
-    
-    def __init__(self, model: SparseAutoencoder, config: Dict[str, Any], 
-                 device: torch.device, save_dir: str = "models"):
-        """
-        Initialize the trainer.
-        
-        Args:
-            model: SparseAutoencoder model to train
-            config: Configuration dictionary
-            device: Device to train on (cuda/cpu)
-            save_dir: Directory to save model checkpoints
-        """
-        self.model = model.to(device)
-        self.config = config
-        self.device = device
-        self.save_dir = save_dir
-        
-        # Create save directory
-        os.makedirs(save_dir, exist_ok=True)
-        
-        # Initialize optimizer and scheduler
-        self.optimizer = optim.Adam(
-            self.model.parameters(),
-            lr=config.get('learning_rate', 1e-3),
-            weight_decay=config.get('weight_decay', 1e-5)
-        )
-        
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer,
-            mode='min',
-            factor=0.5,
-            patience=config.get('patience', 10),
-            verbose=True
-        )
-        
-        # Training history
-        self.train_losses = []
-        self.val_losses = []
-        self.train_reconstruction_losses = []
-        self.val_reconstruction_losses = []
-        self.train_sparsity_losses = []
-        self.val_sparsity_losses = []
-        
-        # Best model tracking
-        self.best_val_loss = float('inf')
-        self.epochs_without_improvement = 0
-        
-    def train_epoch(self, train_loader: DataLoader) -> Dict[str, float]:
-        """
-        Train the model for one epoch.
-        
-        Args:
-            train_loader: Training data loader
-            
-        Returns:
-            Dictionary containing average losses for the epoch
-        """
-        self.model.train()
-        total_loss = 0.0
-        total_reconstruction_loss = 0.0
-        total_sparsity_loss = 0.0
-        num_batches = 0
-        
-        pbar = tqdm(train_loader, desc="Training", leave=False)
-        for batch in pbar:
-            latents = batch['latent'].to(self.device)
-            
-            # Forward pass
-            reconstructed, hidden = self.model(latents)
-            
-            # Compute loss
-            losses = self.model.compute_loss(latents, reconstructed, hidden)
-            
-            # Backward pass
-            self.optimizer.zero_grad()
-            losses['total_loss'].backward()
-            
-            # Gradient clipping
-            if self.config.get('grad_clip', 0) > 0:
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config['grad_clip'])
-            
-            self.optimizer.step()
-            
-            # Accumulate losses
-            total_loss += losses['total_loss'].item()
-            total_reconstruction_loss += losses['reconstruction_loss'].item()
-            total_sparsity_loss += losses['sparsity_loss'].item()
-            num_batches += 1
-            
-            # Update progress bar
-            pbar.set_postfix({
-                'Loss': f"{losses['total_loss'].item():.4f}",
-                'Recon': f"{losses['reconstruction_loss'].item():.4f}",
-                'Sparse': f"{losses['sparsity_loss'].item():.4f}"
-            })
-        
-        return {
-            'total_loss': total_loss / num_batches,
-            'reconstruction_loss': total_reconstruction_loss / num_batches,
-            'sparsity_loss': total_sparsity_loss / num_batches
-        }
-    
-    def validate(self, val_loader: DataLoader) -> Dict[str, float]:
-        """
-        Validate the model on validation set.
-        
-        Args:
-            val_loader: Validation data loader
-            
-        Returns:
-            Dictionary containing average validation losses
-        """
-        self.model.eval()
-        total_loss = 0.0
-        total_reconstruction_loss = 0.0
-        total_sparsity_loss = 0.0
-        num_batches = 0
-        
-        with torch.no_grad():
-            for batch in tqdm(val_loader, desc="Validation", leave=False):
-                latents = batch['latent'].to(self.device)
-                
-                # Forward pass
-                reconstructed, hidden = self.model(latents)
-                
-                # Compute loss
-                losses = self.model.compute_loss(latents, reconstructed, hidden)
-                
-                # Accumulate losses
-                total_loss += losses['total_loss'].item()
-                total_reconstruction_loss += losses['reconstruction_loss'].item()
-                total_sparsity_loss += losses['sparsity_loss'].item()
-                num_batches += 1
-        
-        return {
-            'total_loss': total_loss / num_batches,
-            'reconstruction_loss': total_reconstruction_loss / num_batches,
-            'sparsity_loss': total_sparsity_loss / num_batches
-        }
-    
-    def train(self, train_loader: DataLoader, val_loader: DataLoader, 
-              epochs: int) -> Dict[str, List[float]]:
-        """
-        Train the model for specified number of epochs.
-        
-        Args:
-            train_loader: Training data loader
-            val_loader: Validation data loader
-            epochs: Number of epochs to train
-            
-        Returns:
-            Dictionary containing training history
-        """
-        print(f"Starting training for {epochs} epochs...")
-        print(f"Model parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
-        
-        for epoch in range(epochs):
-            print(f"\nEpoch {epoch + 1}/{epochs}")
-            
-            # Training
-            train_metrics = self.train_epoch(train_loader)
-            
-            # Validation
-            val_metrics = self.validate(val_loader)
-            
-            # Update learning rate
-            self.scheduler.step(val_metrics['total_loss'])
-            
-            # Store history
-            self.train_losses.append(train_metrics['total_loss'])
-            self.val_losses.append(val_metrics['total_loss'])
-            self.train_reconstruction_losses.append(train_metrics['reconstruction_loss'])
-            self.val_reconstruction_losses.append(val_metrics['reconstruction_loss'])
-            self.train_sparsity_losses.append(train_metrics['sparsity_loss'])
-            self.val_sparsity_losses.append(val_metrics['sparsity_loss'])
-            
-            # Print metrics
-            print(f"Train Loss: {train_metrics['total_loss']:.4f} "
-                  f"(Recon: {train_metrics['reconstruction_loss']:.4f}, "
-                  f"Sparse: {train_metrics['sparsity_loss']:.4f})")
-            print(f"Val Loss: {val_metrics['total_loss']:.4f} "
-                  f"(Recon: {val_metrics['reconstruction_loss']:.4f}, "
-                  f"Sparse: {val_metrics['sparsity_loss']:.4f})")
-            print(f"Learning Rate: {self.optimizer.param_groups[0]['lr']:.6f}")
-            
-            # Save best model
-            if val_metrics['total_loss'] < self.best_val_loss:
-                self.best_val_loss = val_metrics['total_loss']
-                self.epochs_without_improvement = 0
-                self.save_model(f"best_model_epoch_{epoch+1}.pt")
-                print("New best model saved!")
-            else:
-                self.epochs_without_improvement += 1
-            
-            # Early stopping
-            if (self.config.get('early_stopping', False) and 
-                self.epochs_without_improvement >= self.config.get('patience', 20)):
-                print(f"Early stopping at epoch {epoch + 1}")
-                break
-        
-        # Save final model
-        self.save_model("final_model.pt")
-        
-        # Save training history
-        self.save_training_history()
-        
-        return {
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'train_reconstruction_losses': self.train_reconstruction_losses,
-            'val_reconstruction_losses': self.val_reconstruction_losses,
-            'train_sparsity_losses': self.train_sparsity_losses,
-            'val_sparsity_losses': self.val_sparsity_losses
-        }
-    
-    def save_model(self, filename: str) -> None:
-        """
-        Save model checkpoint.
-        
-        Args:
-            filename: Name of the checkpoint file
-        """
-        checkpoint = {
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'config': self.config,
-            'epoch': len(self.train_losses),
-            'best_val_loss': self.best_val_loss,
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses
-        }
-        
-        filepath = os.path.join(self.save_dir, filename)
-        torch.save(checkpoint, filepath)
-        print(f"Model saved to {filepath}")
-    
-    def save_training_history(self) -> None:
-        """Save training history as JSON and plots."""
-        # Save as JSON
-        history = {
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'train_reconstruction_losses': self.train_reconstruction_losses,
-            'val_reconstruction_losses': self.val_reconstruction_losses,
-            'train_sparsity_losses': self.train_sparsity_losses,
-            'val_sparsity_losses': self.val_sparsity_losses,
-            'config': self.config,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        with open(os.path.join(self.save_dir, 'training_history.json'), 'w') as f:
-            json.dump(history, f, indent=2)
-        
-        # Create plots
-        self.plot_training_history()
-    
-    def plot_training_history(self) -> None:
-        """Plot training history."""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        
-        # Total loss
-        axes[0, 0].plot(self.train_losses, label='Train', alpha=0.8)
-        axes[0, 0].plot(self.val_losses, label='Validation', alpha=0.8)
-        axes[0, 0].set_title('Total Loss')
-        axes[0, 0].set_xlabel('Epoch')
-        axes[0, 0].set_ylabel('Loss')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # Reconstruction loss
-        axes[0, 1].plot(self.train_reconstruction_losses, label='Train', alpha=0.8)
-        axes[0, 1].plot(self.val_reconstruction_losses, label='Validation', alpha=0.8)
-        axes[0, 1].set_title('Reconstruction Loss')
-        axes[0, 1].set_xlabel('Epoch')
-        axes[0, 1].set_ylabel('Loss')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True, alpha=0.3)
-        
-        # Sparsity loss
-        axes[1, 0].plot(self.train_sparsity_losses, label='Train', alpha=0.8)
-        axes[1, 0].plot(self.val_sparsity_losses, label='Validation', alpha=0.8)
-        axes[1, 0].set_title('Sparsity Loss')
-        axes[1, 0].set_xlabel('Epoch')
-        axes[1, 0].set_ylabel('Loss')
-        axes[1, 0].legend()
-        axes[1, 0].grid(True, alpha=0.3)
-        
-        # Learning rate (if available)
-        if hasattr(self.scheduler, 'get_last_lr'):
-            lr_history = [group['lr'] for group in self.optimizer.param_groups]
-            axes[1, 1].plot(lr_history, label='Learning Rate', alpha=0.8)
-            axes[1, 1].set_title('Learning Rate')
-            axes[1, 1].set_xlabel('Epoch')
-            axes[1, 1].set_ylabel('Learning Rate')
-            axes[1, 1].legend()
-            axes[1, 1].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(os.path.join(self.save_dir, 'training_history.png'), dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        print(f"Training plots saved to {self.save_dir}/training_history.png")
-
-
-def train_model(config: Dict[str, Any], train_loader: DataLoader, 
-                val_loader: DataLoader, device: torch.device) -> Tuple[SparseAutoencoder, Dict[str, List[float]]]:
-    """
-    Train a SparseAutoencoder model.
+    Train one SAE instance.
     
     Args:
-        config: Configuration dictionary
-        train_loader: Training data loader
-        val_loader: Validation data loader
+        model: TopKSAE model
+        train_loader: Training dataloader
+        val_loader: Validation dataloader
+        optimizer: Optimizer
         device: Device to train on
-        
+        max_epochs: Number of epochs
+        k: k value for this model
+        hidden_dim: Hidden dimension
+        run_id: Run ID for saving
+        model_dir: Directory to save models
+        use_wandb: Whether to use wandb logging
+        wandb_project: Wandb project name
+    
     Returns:
-        Tuple of (trained_model, training_history)
+        model, best_val_loss
     """
-    # Set random seed
-    set_seed(config.get('random_seed', 42))
+    from model import loss_fn
     
-    # Create model
-    from .model import create_model
-    model = create_model(config)
+    if use_wandb:
+        import wandb
+        wandb.init(
+            project=wandb_project,
+            name=f'topksae_k{k}_run{run_id}',
+            config={
+                'k': k,
+                'hidden_dim': hidden_dim,
+                'max_epochs': max_epochs,
+                'run_id': run_id,
+            }
+        )
     
-    # Create trainer
-    trainer = Trainer(model, config, device)
+    # Track losses
+    train_losses, val_losses = [], []
+    train_mse_losses, train_auxk_losses = [], []
+    val_mse_losses, val_auxk_losses = [], []
     
-    # Train model
-    history = trainer.train(train_loader, val_loader, config.get('epochs', 100))
+    # Best model tracking
+    best_val_loss = float('inf')
+    best_model_state = None
     
-    return model, history
-
-
-if __name__ == "__main__":
-    # Test training with sample data
-    from .data_loader import create_sample_data, load_docking_data
+    model.reset_usage_tracking()
     
-    # Create sample data
-    create_sample_data("data/sample_docking_data.npz", n_samples=1000)
+    for epoch in range(max_epochs):
+        # Training phase
+        model.train()
+        epoch_train_loss = 0.0
+        epoch_train_mse = 0.0
+        epoch_train_auxk = 0.0
+        n_train_batches = 0
+        
+        for batch in train_loader:
+            x = batch.to(device)
+            optimizer.zero_grad()
+            recons, auxk, _ = model(x)
+            mse_loss, auxk_loss = loss_fn(x, recons, auxk)
+            total_loss = mse_loss + auxk_loss
+            total_loss.backward()
+            optimizer.step()
+            model._tie_decoder_weights()
+            
+            epoch_train_loss += total_loss.item()
+            epoch_train_mse += mse_loss.item()
+            epoch_train_auxk += auxk_loss.item()
+            n_train_batches += 1
+        
+        avg_train_loss = epoch_train_loss / n_train_batches
+        avg_train_mse = epoch_train_mse / n_train_batches
+        avg_train_auxk = epoch_train_auxk / n_train_batches
+        
+        # Validation phase
+        model.eval()
+        epoch_val_loss = 0.0
+        epoch_val_mse = 0.0
+        epoch_val_auxk = 0.0
+        n_val_batches = 0
+        
+        with torch.no_grad():
+            for batch in val_loader:
+                x = batch.to(device)
+                recons = model.forward_val(x)
+                mse_loss, auxk_loss = loss_fn(x, recons, None)
+                total_loss = mse_loss + auxk_loss
+                
+                epoch_val_loss += total_loss.item()
+                epoch_val_mse += mse_loss.item()
+                epoch_val_auxk += auxk_loss.item()
+                n_val_batches += 1
+        
+        avg_val_loss = epoch_val_loss / n_val_batches
+        avg_val_mse = epoch_val_mse / n_val_batches
+        avg_val_auxk = epoch_val_auxk / n_val_batches
+        
+        # Store histories
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        train_mse_losses.append(avg_train_mse)
+        train_auxk_losses.append(avg_train_auxk)
+        val_mse_losses.append(avg_val_mse)
+        val_auxk_losses.append(avg_val_auxk)
+        
+        # Track best model
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_model_state = model.state_dict().copy()
+        
+        # Get dead neuron count
+        dead_mask = model.auxk_mask_fn()
+        num_dead = dead_mask.sum().item()
+        
+        # Log metrics
+        if use_wandb:
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
+                "train_mse": avg_train_mse,
+                "train_auxk": avg_train_auxk,
+                "val_mse": avg_val_mse,
+                "val_auxk": avg_val_auxk,
+                "dead_neurons": num_dead/hidden_dim,
+                "dead_neurons_pct": (num_dead/hidden_dim)*100,
+            })
+        
+        if (epoch + 1) % 10 == 0 or (epoch + 1) == max_epochs:
+            print(f"k={k}, Run {run_id}, Epoch {epoch+1}/{max_epochs} | "
+                  f"Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | "
+                  f"Dead: {num_dead}/{hidden_dim}")
     
-    # Load data
-    config = {
-        'batch_size': 32,
-        'train_size': 0.7,
-        'val_size': 0.15,
-        'test_size': 0.15,
-        'random_seed': 42
-    }
+    # Load best model
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
     
-    train_loader, val_loader, test_loader, scaler = load_docking_data(
-        "data/sample_docking_data.npz", config
-    )
+    # Save model
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, f'topksae_k{k}_run{run_id}.pt')
+    torch.save(model.state_dict(), model_path)
     
-    # Training config
-    train_config = {
-        'input_dim': 30,
-        'hidden_dim': 64,
-        'sparsity_lambda': 0.01,
-        'learning_rate': 1e-3,
-        'epochs': 10,
-        'random_seed': 42
-    }
+    history_path = os.path.join(model_dir, f"training_history_k{k}_run{run_id}.pkl")
+    torch.save({
+        'train_losses': train_losses,
+        'val_losses': val_losses,
+        'train_mse': train_mse_losses,
+        'train_auxk': train_auxk_losses,
+        'val_mse': val_mse_losses,
+        'val_auxk': val_auxk_losses,
+        'best_val_loss': best_val_loss,
+        'k': k,
+        'run_id': run_id
+    }, history_path)
     
-    # Train model
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model, history = train_model(train_config, train_loader, val_loader, device)
+    print(f"Finished training k={k}, run {run_id}. Model saved to {model_path}")
     
-    print("Training completed!")
+    if use_wandb:
+        wandb.log({
+            "final_val_loss": best_val_loss,
+            "final_train_loss": train_losses[-1]
+        })
+        wandb.finish()
+    
+    return model, best_val_loss
