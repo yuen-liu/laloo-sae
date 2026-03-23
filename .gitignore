@@ -212,3 +212,6 @@ processed_data/
 
 # Structures directory - ignore all structure fiels
 structures_02_28_2026/
+
+# Models directory
+models/
