@@ -208,3 +208,6 @@ __marimo__/
 
 # Data directory - ignore all data files
 data/
+
+# Structures directory - ignore all structure fiels
+structures_02_28_2026/
