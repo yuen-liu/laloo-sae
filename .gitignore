@@ -215,3 +215,5 @@ structures_02_28_2026/
 
 # Models directory
 models/
+
+.DS_Store
