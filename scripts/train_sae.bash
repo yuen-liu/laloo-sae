@@ -4,8 +4,8 @@
 #SBATCH -n 1
 #SBATCH --gres=gpu:1
 #SBATCH -p gpu
-#SBATCH -J jup_server
-#SBATCH -o jup_server.out
+#SBATCH -J train_sae
+#SBATCH -o train_sae_%j.out
 
 # Load schrodinger and activate environment
 module unload schrodinger; export SCHRODINGER=/cm/shared/apps/schrodinger/builds/NB/2025-4/build-050
@@ -18,13 +18,5 @@ export OMP_NUM_THREADS=$SLURM_NTASKS
 export no_proxy="$no_proxy,friesner.theo.chem.columbia.edu,10.198.22.10"
 export NO_PROXY="$NO_PROXY,friesner.theo.chem.columbia.edu,10.198.22.10"
 
-# This starts jupyter server
-jupyter lab --no-browser --ip=$(hostname -s)
-
-
-
-
-
-
-
-
+cd "$(dirname "$0")/.."
+python scripts/train_sae.py "$@"
