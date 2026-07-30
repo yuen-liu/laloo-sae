@@ -40,6 +40,20 @@ class TopKSAE(nn.Module):
         x_norm = (x - mu) / (std + eps)
         return x_norm, mu, std
 
+    @torch.no_grad()
+    def init_b_pre(self, x_train):
+        """
+        Initialize b_pre to the train-set mean of the layer-normalized
+        activations, instead of the default zero.
+
+        b_pre is still updated by gradient descent during training; this
+        just gives it the right starting point instead of making it learn
+        the offset from scratch, which is slow and a known cause of dead
+        TopK features (see arxiv.org/abs/2605.31518).
+        """
+        x_norm, _, _ = self.LN(x_train)
+        self.b_pre.data = x_norm.mean(dim=0)
+
     def _tie_decoder_weights(self):
         """
         Normalizes the decoder weights to have unit norm.

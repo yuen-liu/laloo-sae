@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
+from sklearn.model_selection import train_test_split
 
 from .data_loader import load_pickle_data
 from .config import LATENT_DIM, EXCLUSION_LIST
@@ -120,16 +121,35 @@ def process_all_cases(root_dir, output_dir, exclusion_list=None, latent_dim=LATE
     metadata_df = pd.concat(all_metadata, ignore_index=True)
     metadata_df['global_idx'] = np.arange(len(metadata_df))
     
-    # Compute stats
+    # Case-level train/val/test split, computed before normalization so that
+    # val/test poses never leak into the normalization statistics below.
+    print("Splitting cases into train/val/test...")
+    split = split_cases(metadata_df)
+    train_idx = split['train_idx']
+    print(f"  Train: {len(train_idx):,} poses from {len(split['train_cases'])} cases")
+    print(f"  Val:   {len(split['val_idx']):,} poses from {len(split['val_cases'])} cases")
+    print(f"  Test:  {len(split['test_idx']):,} poses from {len(split['test_cases'])} cases")
+
+    # Compute stats (mean/std from the train split only) and normalize
     print("Computing statistics...")
-    stats = compute_stats(latents_array, metadata_df)
-    
+    stats = compute_stats(latents_array, metadata_df, train_idx=train_idx)
+
     # Normalize
     latents_normalized = (latents_array - stats['mean']) / (stats['std'] + 1e-8)
-    
+
     # Save
     print("Saving data...")
     save_to_npz(output_dir, latents_array, latents_normalized, metadata_df, stats)
+    np.savez(
+        output_dir / 'splits.npz',
+        train_idx=split['train_idx'],
+        val_idx=split['val_idx'],
+        test_idx=split['test_idx'],
+        train_cases=split['train_cases'],
+        val_cases=split['val_cases'],
+        test_cases=split['test_cases'],
+    )
+    print(f"✓ Saved splits to {output_dir / 'splits.npz'}")
     
     # Save case info
     with open(output_dir / 'case_info.pkl', 'wb') as f:
@@ -139,11 +159,51 @@ def process_all_cases(root_dir, output_dir, exclusion_list=None, latent_dim=LATE
     return stats, latents_array, metadata_df
 
 
-def compute_stats(latents, metadata):
-    """Compute and print dataset statistics"""
+def split_cases(metadata, test_size=0.15, random_state=42):
+    """
+    Case-level train/val/test split (70/15/15).
+
+    Splitting by case_id (not by individual pose) keeps every pose from a
+    given protein system in a single split, and lets normalization stats be
+    computed from train cases only (see compute_stats).
+    """
+    case_ids = metadata['case_id'].unique()
+    train_cases, test_cases = train_test_split(
+        case_ids, test_size=test_size, random_state=random_state
+    )
+    train_cases, val_cases = train_test_split(
+        train_cases, test_size=0.176, random_state=random_state
+    )  # 0.176 * 0.85 ≈ 0.15
+
+    train_idx = metadata[metadata['case_id'].isin(train_cases)]['global_idx'].values
+    val_idx = metadata[metadata['case_id'].isin(val_cases)]['global_idx'].values
+    test_idx = metadata[metadata['case_id'].isin(test_cases)]['global_idx'].values
+
+    return {
+        'train_idx': train_idx,
+        'val_idx': val_idx,
+        'test_idx': test_idx,
+        'train_cases': train_cases,
+        'val_cases': val_cases,
+        'test_cases': test_cases,
+    }
+
+
+def compute_stats(latents, metadata, train_idx=None):
+    """
+    Compute and print dataset statistics.
+
+    norm_mean/norm_std (the values used to normalize latents) are computed
+    from latents[train_idx] when train_idx is given, so val/test poses never
+    influence normalization. Descriptive percentiles below still use the
+    full dataset since they aren't used for anything the model sees.
+    """
+    norm_latents = latents[train_idx] if train_idx is not None else latents
+    if train_idx is not None:
+        print(f"  (norm stats computed from {len(train_idx):,} train poses only)")
     stats = {
-        'mean': latents.mean(axis=0),
-        'std': latents.std(axis=0),
+        'mean': norm_latents.mean(axis=0),
+        'std': norm_latents.std(axis=0),
         'n_samples': len(latents),
         'n_cases': metadata['case_id'].nunique(),
         'rmsd_percentiles': {

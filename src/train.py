@@ -51,7 +51,14 @@ def train_sae(model, train_loader, val_loader, optimizer, device, max_epochs,
     best_model_state = None
     
     model.reset_usage_tracking()
-    
+
+    # Initialize b_pre from the train-set mean instead of zero (see
+    # TopKSAE.init_b_pre), rather than leaving it to learn the offset
+    # via gradient descent.
+    train_batches = torch.cat([batch.to(device) for batch in train_loader], dim=0)
+    model.init_b_pre(train_batches)
+    del train_batches
+
     for epoch in range(max_epochs):
         # Training phase
         model.train()
