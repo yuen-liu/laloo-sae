@@ -8,14 +8,20 @@ class LatentDataset(Dataset):
     """
     Dataset for latent vectors with optional metadata.
     """
-    def __init__(self, latents, metadata=None, return_metadata=False):
+    def __init__(self, latents, metadata=None, return_metadata=False, device=None):
         """
         Args:
             latents: numpy array of shape [N, latent_dim]
             metadata: pandas DataFrame with same length as latents (optional)
             return_metadata: if True, return (latent, metadata_dict) pairs
+            device: if given, latents are moved onto this device once up
+                front (e.g. GPU), so __getitem__ never touches the CPU.
+                Only safe with num_workers=0 (CUDA tensors can't cross
+                process boundaries the way CPU tensors can).
         """
         self.latents = torch.tensor(latents, dtype=torch.float32)
+        if device is not None:
+            self.latents = self.latents.to(device)
         self.metadata = metadata
         self.return_metadata = return_metadata
         
@@ -46,52 +52,68 @@ def create_dataloaders(
     metadata,
     splits,
     batch_size=256,
-    num_workers=4,
+    num_workers=0,
     pin_memory=True,
-    return_metadata=False
+    return_metadata=False,
+    device=None
 ):
     """
     Create train/val/test dataloaders from processed data.
-    
+
     Args:
         latents: numpy array [N, latent_dim] - normalized latents
         metadata: pandas DataFrame with N rows
         splits: dict or npz file with 'train_idx', 'val_idx', 'test_idx'
         batch_size: batch size for training
-        num_workers: number of workers for data loading
-        pin_memory: whether to pin memory (faster GPU transfer)
+        num_workers: number of DataLoader worker processes. Defaults to 0
+            since this dataset is tiny (a few tens of MB) — spinning up
+            worker processes costs more than it saves, and actively hurts
+            on SLURM allocations with few CPUs.
+        pin_memory: whether to pin memory (faster GPU transfer). Ignored
+            (forced off) when device is set, since data is already there.
         return_metadata: if True, dataloaders yield (latent, metadata) tuples
-    
+        device: if given (e.g. a CUDA device), latents are moved there once
+            up front instead of being transferred per-batch. Only valid
+            with num_workers=0.
+
     Returns:
         train_loader, val_loader, test_loader
     """
+    if device is not None and num_workers != 0:
+        raise ValueError("device preloading requires num_workers=0")
+
     # Load splits if npz file
     if isinstance(splits, str):
         splits = np.load(splits)
-    
+
     train_idx = splits['train_idx']
     val_idx = splits['val_idx']
     test_idx = splits['test_idx']
-    
+
     # Create datasets
     train_dataset = LatentDataset(
         latents[train_idx],
         metadata.iloc[train_idx] if metadata is not None else None,
-        return_metadata=return_metadata
+        return_metadata=return_metadata,
+        device=device
     )
-    
+
     val_dataset = LatentDataset(
         latents[val_idx],
         metadata.iloc[val_idx] if metadata is not None else None,
-        return_metadata=return_metadata
+        return_metadata=return_metadata,
+        device=device
     )
-    
+
     test_dataset = LatentDataset(
         latents[test_idx],
         metadata.iloc[test_idx] if metadata is not None else None,
-        return_metadata=return_metadata
+        return_metadata=return_metadata,
+        device=device
     )
-    
+
+    pin_memory = pin_memory and device is None
+
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
@@ -101,7 +123,7 @@ def create_dataloaders(
         pin_memory=pin_memory,
         drop_last=True  # Drop last incomplete batch
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -110,7 +132,7 @@ def create_dataloaders(
         pin_memory=pin_memory,
         drop_last=False
     )
-    
+
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,

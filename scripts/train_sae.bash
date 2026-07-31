@@ -18,5 +18,5 @@ export OMP_NUM_THREADS=$SLURM_NTASKS
 export no_proxy="$no_proxy,friesner.theo.chem.columbia.edu,10.198.22.10"
 export NO_PROXY="$NO_PROXY,friesner.theo.chem.columbia.edu,10.198.22.10"
 
-cd "$(dirname "$0")/.."
+cd "$SLURM_SUBMIT_DIR"
 python scripts/train_sae.py "$@"

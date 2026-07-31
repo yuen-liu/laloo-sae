@@ -49,7 +49,10 @@ def parse_args():
     parser.add_argument("--base-seed", type=int, default=42)
     parser.add_argument("--auxk", type=int, default=12)
     parser.add_argument("--dead-steps-threshold", type=int, default=2000)
-    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=0,
+                         help="0 by default: this dataset is small enough that worker "
+                              "processes add overhead instead of saving time, and can "
+                              "actively hurt on SLURM allocations with few CPUs")
     parser.add_argument("--wandb-project", default="laloo-sae")
     parser.add_argument("--no-wandb", action="store_true")
     return parser.parse_args()
@@ -78,9 +81,16 @@ def main():
     latents, metadata, stats = load_processed_data(args.data_dir)
     splits_path = os.path.join(args.data_dir, "splits.npz")
 
+    # Preload the whole (tiny) dataset onto the GPU once instead of
+    # transferring it batch-by-batch. Requires num_workers=0 (see
+    # create_dataloaders docstring) — if you pass --num-workers > 0 this
+    # falls back to per-batch CPU->GPU transfer instead.
+    preload_device = device if (device.type == "cuda" and args.num_workers == 0) else None
+
     train_loader, val_loader, test_loader = create_dataloaders(
         latents, metadata, splits_path,
         batch_size=args.batch_size, num_workers=args.num_workers,
+        device=preload_device,
     )
 
     results = {k: [] for k in args.k_values}
