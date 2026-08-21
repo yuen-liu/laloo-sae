@@ -50,7 +50,7 @@ for feat, title, out_path in SPOTLIGHT_FEATURES:
     a_act = a[active]
     y_act = good_mask_2A[active]
 
-    fig, ax = plt.subplots(figsize=(7.8, 3.6))
+    fig, ax = plt.subplots(figsize=(7.8, 4.3))
     bins = np.linspace(0, a_act.max() if len(a_act) else 1.0, 60)
     ax.hist(a_act[~y_act], bins=bins, density=False, alpha=0.75, color='#0072B2',
             label=f'bad (n={(~y_act).sum():,})', edgecolor='none')
