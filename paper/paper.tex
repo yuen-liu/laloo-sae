@@ -4,9 +4,9 @@
 \usepackage[dblblindworkshop]{neurips_2026}
 \workshoptitle{AI4DD: AI for Drug Discovery Workshop (NeurIPS 2026)}
 \raggedbottom % override the style file's \flushbottom, which stretches whitespace (incl. around floats) to fill each page exactly
-\setlength{\textfloatsep}{10pt plus 2pt minus 4pt} % space between a top/bottom-floated table and body text (default ~20pt)
-\setlength{\floatsep}{6pt plus 2pt minus 2pt}       % space between consecutive floats (default ~12pt)
-\setlength{\intextsep}{6pt plus 2pt minus 2pt}      % space around an in-text [h] float (default ~12pt)
+\setlength{\textfloatsep}{7pt plus 2pt minus 4pt}   % space between a top/bottom-floated table and body text (default ~20pt)
+\setlength{\floatsep}{5pt plus 2pt minus 2pt}       % space between consecutive floats (default ~12pt)
+\setlength{\intextsep}{4pt plus 2pt minus 2pt}      % space around an in-text [h] float (default ~12pt)
 
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
@@ -132,37 +132,37 @@ The SAE's sparse features are not just useful for filtering---they are individua
 
 \begin{figure}[!ht]
 \centering
-\begin{subfigure}{0.26\linewidth}
+\begin{subfigure}{0.235\linewidth}
 \includegraphics[width=\linewidth]{figures/feature_51_2384.png}
-\caption{\footnotesize Pose 2384 (RMSD 5.6Å)}
+\caption{\small Pose 2384 (RMSD 5.6Å)}
 \end{subfigure}
 \hfill
-\begin{subfigure}{0.26\linewidth}
+\begin{subfigure}{0.235\linewidth}
 \includegraphics[width=\linewidth]{figures/feature_51_4556.png}
-\caption{\footnotesize Pose 4556 (RMSD 7.2Å)}
+\caption{\small Pose 4556 (RMSD 7.2Å)}
 \end{subfigure}
 \hfill
-\begin{subfigure}{0.26\linewidth}
+\begin{subfigure}{0.47\linewidth}
 \includegraphics[width=\linewidth]{figures/feature_51_activation_dist.png}
-\caption{\footnotesize Activation dist.\ (2Å label)}
-\end{subfigure}
-\vspace{-6pt}
-
-\begin{subfigure}{0.26\linewidth}
-\includegraphics[width=\linewidth]{figures/feature_84_11084.png}
-\caption{\footnotesize Pose 11084 (RMSD 5.7Å)}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.26\linewidth}
-\includegraphics[width=\linewidth]{figures/feature_84_11377.png}
-\caption{\footnotesize Pose 11377 (RMSD 5.0Å)}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.26\linewidth}
-\includegraphics[width=\linewidth]{figures/feature_84_activation_dist.png}
-\caption{\footnotesize Activation dist.\ (2Å label)}
+\caption{\small Activation dist.\ (2Å label)}
 \end{subfigure}
 \vspace{-2pt}
+
+\begin{subfigure}{0.235\linewidth}
+\includegraphics[width=\linewidth]{figures/feature_84_11084.png}
+\caption{\small Pose 11084 (RMSD 5.7Å)}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.235\linewidth}
+\includegraphics[width=\linewidth]{figures/feature_84_11377.png}
+\caption{\small Pose 11377 (RMSD 5.0Å)}
+\end{subfigure}
+\hfill
+\begin{subfigure}{0.47\linewidth}
+\includegraphics[width=\linewidth]{figures/feature_84_activation_dist.png}
+\caption{\small Activation dist.\ (2Å label)}
+\end{subfigure}
+\vspace{-6pt}
 \caption{\small Feature 51 (top, thrombin) and Feature 84 (bottom, uPA), both members of the deployed $K$=8 4Å combo filter (case details and statistics in text). Left/middle: top-activating test poses, docked pose (orange) vs.\ reference (green); the colored backbone traces in Feature 51's poses reflect the pipeline's induced-fit receptor-loop sampling, present in both good and bad poses for this case (see below). Right: activation distribution (active poses only, log-scale count) split by the 2Å native-pose criterion.}
 \label{fig:features}
 \end{figure}
