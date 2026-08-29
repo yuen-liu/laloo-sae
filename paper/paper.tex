@@ -3,6 +3,9 @@
 % NeurIPS 2026 style. Workshop, double-blind track.
 \usepackage[dblblindworkshop]{neurips_2026}
 \workshoptitle{AI4DD: AI for Drug Discovery Workshop (NeurIPS 2026)}
+\makeatletter
+\renewcommand{\@noticestring}{Submitted to in the AI for Drug Discovery workshop (NeurIPS 2026).}
+\makeatother
 \raggedbottom % override the style file's \flushbottom, which stretches whitespace (incl. around floats) to fill each page exactly
 \setlength{\textfloatsep}{3pt plus 2pt minus 2pt}   % space between a top/bottom-floated table and body text (default ~20pt)
 \setlength{\floatsep}{2pt plus 1pt minus 1pt}       % space between consecutive floats (default ~12pt)
@@ -40,15 +43,15 @@
 \maketitle
 
 \begin{abstract}
-Protein-ligand docking pipelines based on variational autoencoders (VAEs) achieve strong predictive performance but produce opaque latent representations, while the large number of candidate poses generated per complex imposes substantial computational cost as each undergoes expensive energy minimization and refinement regardless of quality. Physics-informed generative pipelines like the Friesner Group's IFD-ML pipeline ground predictions in thermodynamic principles, making learned features more likely to be physically meaningful and interpretability more tractable and valuable than in end-to-end models. We apply sparse autoencoders (SAEs) to the VAE latent space of the IFD-ML pipeline, training on 435,069 poses across 36 protein systems. At a 4Å threshold, SAE-derived features filter 16.5\% of poor poses prior to refinement while retaining 91.1\% of native-like conformations, outperforming the pipeline's own energy score. Fraction-of-variance-explained (FVE) analysis shows the top SAE retains 62\% of latent variance while still supporting a high-precision filter. Sparse features activate exclusively on failed docking attempts, each corresponding to a distinct structural failure mode---an interpretable window into what generative models learn about binding physics. These results show SAEs can serve simultaneously as practical computational filters and interpretability tools for building trustworthy drug-discovery pipelines.
+Protein-ligand docking pipelines based on variational autoencoders (VAEs) achieve strong predictive performance but produce opaque latent representations, while the large number of candidate poses generated per complex imposes substantial computational cost as each undergoes expensive energy minimization and refinement regardless of quality. Physics-informed generative approaches like the Friesner Group's IFD-ML pipeline ground predictions in thermodynamic principles, making learned features more likely to be physically meaningful and interpretability more tractable and valuable than in end-to-end models. We apply sparse autoencoders (SAEs) to the VAE latent space of the IFD-ML pipeline, training on 435,069 poses across 36 protein systems. At a 4Å threshold, SAE-derived features filter 16.5\% of poses prior to refinement while retaining 91.1\% of native-like conformations, outperforming the pipeline's own energy score. Fraction-of-variance-explained (FVE) analysis shows the top SAE retains 62\% of latent variance while still supporting a high-precision filter. Sparse features activate exclusively on failed docking attempts, each corresponding to a distinct structural failure mode---an interpretable window into what generative models learn about binding physics. These results show SAEs can serve simultaneously as practical computational filters and interpretability tools for building trustworthy drug-discovery pipelines.
 \end{abstract}
 
 \section{Introduction}
-Protein-ligand binding governs essentially all biological processes and underlies the majority of small-molecule drug discovery \citep{dhakal2022,sim2025}. Predicting how a ligand binds a flexible protein target, the induced fit docking (IFD) problem \citep{sherman2006}, remains one of computational biochemistry's hardest tasks, addressed by physics-based pipelines such as IFD-MD \citep{miller2021}. Most end-to-end machine learning (ML) approaches, such as DeepDTA and its graph-based successors, treat binding as a sequence-to-structure mapping without explicitly modeling atomic interactions \citep{wu2025}, and are further limited by scarce training data, poor interpretability, and weak generalization to novel proteins or ligands \citep{lam2025,jiang2026}.
+Protein-ligand binding governs essentially all biological processes and underlies the majority of small-molecule drug discovery \citep{dhakal2022,sim2025}. Predicting how a ligand binds a flexible protein target, the induced fit docking (IFD) problem \citep{sherman2006}, remains one of computational biochemistry's hardest tasks, addressed by physics-based pipelines such as IFD-MD (IFD with molecular dynamics) \citep{miller2021}. Most end-to-end machine learning (ML) approaches, such as DeepDTA and its graph-based successors, treat binding as a sequence-to-structure mapping without explicitly modeling atomic interactions \citep{wu2025}; and are further limited by scarce training data, poor interpretability, and weak generalization to novel proteins or ligands \citep{lam2025,jiang2026}.
 
-Schrödinger and the Friesner Group's IFD-ML pipeline combines physics-based simulation with variational autoencoder (VAE) and diffusion generative models to sample conformational space, achieving strong performance in cross-docking benchmarks similar to \citet{mansoor2024} (Konstantinovsky et al., in preparation). Because it relies on a VAE, each candidate pose is represented by a fixed-dimensional continuous latent vector---the kind of representation a sparse autoencoder (SAE) is designed to decompose into interpretable features (Section 2.2). This creates two problems. First, the pipeline generates thousands of candidate poses per complex, each undergoing expensive Prime energy minimization \citep{li2011} and algorithmic refinement regardless of quality---a bottleneck at scale \citep{wang2019}. Second, the VAE's latent vectors are opaque: it is unclear which directions encode binding geometry, energetic favorability, or structural quality, and understanding why a model scores a pose highly matters as much as the score itself \citep{qadri2025}. This paper addresses both: a practical filter that removes likely-poor poses before refinement, and an interpretability method that opens up what the latent space has learned.
+Schrödinger and the Friesner Group's IFD-ML pipeline combines physics-based simulation with variational autoencoder (VAE) and diffusion generative models to sample conformational space, achieving strong performance in cross-docking benchmarks similar to \citet{mansoor2024} (Konstantinovsky et al., in preparation). Because it relies on a VAE, each candidate pose is represented by a fixed-dimensional continuous latent vector---the kind of representation a sparse autoencoder (SAE) is designed to decompose into interpretable features (Section 2.2). This creates two problems. First, the pipeline generates thousands of candidate poses per complex, each undergoing expensive Prime energy minimization \citep{li2011} and algorithmic refinement regardless of quality---a bottleneck at scale \citep{wang2019}. Second, the VAE's latent vectors are opaque: it is unclear which directions encode binding geometry, energetic favorability, or structural quality; and understanding why a model scores a pose highly matters as much as the score itself \citep{qadri2025}. This paper addresses both: a practical filter that removes likely-poor poses before refinement, and an interpretability method that opens up what the latent space has learned.
 
-Sparse autoencoders (SAEs) decompose opaque neural representations into interpretable, monosemantic features \citep{templeton2024,gao2024}. Applied to protein language models, SAEs recover biologically meaningful features corresponding to secondary structure, binding sites, and evolutionary conservation \citep{adams2025,simon2025}. Physics-informed pipelines like IFD-ML are a compelling target: because the latent space is constrained by thermodynamic priors and atomic interactions, learned features are more likely to correspond to real physical quantities---energy terms, geometric constraints, binding physics---than in end-to-end models \citep{li2026,wu2024}. SAEs have been applied to structure-generation models such as RFdiffusion (FoldSAE) \citep{zarzecki2025} and protein folding representations (ESMFold/ESM2-3B) \citep{parsan2025}, but to our knowledge not yet to a physics-informed, molecular-docking generative model.
+Sparse autoencoders (SAEs) decompose opaque neural representations into interpretable, monosemantic features \citep{templeton2024,gao2024}. Applied to protein language models, SAEs recover biologically meaningful features corresponding to secondary structure, binding sites, and evolutionary conservation \citep{adams2025,simon2025}. Physics-informed pipelines like IFD-ML are a compelling target: because the latent space is constrained by thermodynamic priors and atomic interactions, learned features are more likely to correspond to real physical quantities---energy terms, geometric constraints, binding physics---than in end-to-end models \citep{li2026,wu2024}. SAEs have been applied to structure-generation models such as RFdiffusion (FoldSAE) \citep{zarzecki2025}, RFdiffusion3/RoseTTAFold3 \citep{yu2026}, and protein folding representations (ESMFold/ESM2-3B) \citep{parsan2025}, but to our knowledge not yet to a physics-informed, molecular-docking generative model.
 
 This work applies TopK SAEs to the VAE latent space of the IFD-ML pipeline to serve both goals at once. Concretely, we make three contributions: (1) a practical pre-refinement filter that flags 16.5\% of poses for removal while retaining 91.1\% of native-like conformations; (2) evidence that the pipeline's own energy score cannot substitute for this filter, structurally unable to reach the SAE's operating points; (3) sparse features that isolate distinct, physically interpretable failure modes, from severe rotational misorientation to milder translational displacement, in what generative models learn about binding physics.
 
@@ -59,7 +62,7 @@ We compiled a dataset of 435,069 molecular docking poses across 36 protein-ligan
 
 \subsection{TopK Sparse Autoencoder}
 
-We train TopK SAEs with $4\times$ expansion (30D input $\to$ 120D hidden $\to$ 30D reconstruction) following \citet{adams2025}; the TopK operation retains the $K$ largest activations and zeros the rest, with reconstruction loss as the training objective. The input is mean-centered via a learned pre-encoder bias, initialized to the training-set mean of the normalized activations and subtracted before encoding, following \citet{simon2026}'s dead-feature mitigation. We trained SAEs across $K \in \{1, 3, 6, 8, 15, 20, 30\}$, 5 seeds per $K$, for up to 100 epochs using Adam ($\text{lr}=10^{-3}$, batch size 256), selecting the best run per $K$ by validation loss; we report results for $K \in \{3, 8, 15\}$ in the main text (the full sweep across all seven $K$ values follows similar trends but is omitted here for space), selecting the operating $K$ per analysis (Section 3).
+We train TopK SAEs with $4\times$ expansion (30D input $\to$ 120D hidden $\to$ 30D reconstruction) following \citet{adams2025}; the TopK operation retains the $K$ largest activations and zeros the rest, with reconstruction loss as the training objective. The input is mean-centered via a learned pre-encoder bias, initialized to the training-set mean of the normalized activations and subtracted before encoding, following \citet{simon2026}'s dead-feature mitigation. We trained SAEs across $K \in \{1, 3, 6, 8, 15, 20, 30\}$, 5 seeds per $K$, for up to 100 epochs using Adam ($\text{lr}=10^{-3}$, batch size 256), selecting the best run per $K$ by validation loss; we report results for $K \in \{3, 8, 15\}$ in the main text; the full diagnostics sweep across all seven $K$ values is in Appendix~\ref{app:full-sweep} (auPR and FVE trends are consistent, though dead-feature rate is not monotonic in $K$), selecting the operating $K$ per analysis (Section 3).
 
 \subsection{Pose Quality Classification}
 To assess whether SAE features provide utility beyond raw latents, we trained logistic regression classifiers on (1) 30D normalized VAE latents (L2 penalty, class-balanced) and (2) 120D sparse SAE activations for $K \in \{3, 8, 15, 20, 30\}$ (L1 penalty, class-balanced), fit on train and evaluated on test. auPR is our primary metric, since it handles class imbalance better than ROC-AUC, which we also report for comparison with prior work.
@@ -71,7 +74,7 @@ The paper's central practical result is a pre-refinement filter, built using a t
 
 \subsection{Reconstruction, Classification, and Sparsity}
 
-Does decomposing the latent space into sparse features cost any of the predictive signal present in the raw, dense latents? Table~\ref{tab:diagnostics} reports auPR for bad-pose classification, FVE, and dead-feature rate, all on the test set. Raw latents match or exceed every SAE $K$ on auPR at both thresholds---the sparse decomposition provides no consistent predictive lift, so its value lies in filtering (Section 3.2) and interpretability (Section 3.4) rather than classification. FVE grows monotonically with $K$ without a matching auPR gain, and dead-feature rate spikes to 25.8\% at $K$=15 despite the mean-centering mitigation from Section 2.2 \citep{simon2026}.
+Does decomposing the latent space into sparse features cost any of the predictive signal present in the raw, dense latents? Table~\ref{tab:diagnostics} reports auPR for bad-pose classification, FVE, and dead-feature rate, all on the test set. Raw latents match or exceed every SAE $K$ on auPR at both thresholds---the sparse decomposition provides no consistent predictive lift, so its value lies in filtering (Section 3.2) and interpretability (Section 3.4) rather than classification. FVE grows monotonically with $K$ without a matching auPR gain, and dead-feature rate spikes to 25.8\% at $K$=15 despite the mean-centering mitigation from Section 2.2 \citep{simon2026}, likely because the fixed 12-slot auxiliary revival budget does not scale with $K$; stronger, $K$-scaled interventions may be needed.
 
 \begin{table}[!ht]
 \caption{auPR, FVE, and dead-feature rate, raw latents vs.\ SAE $K$ (test set).}
@@ -93,7 +96,7 @@ SAE $K$=15  & 0.750 & 0.846 & 90.0\% & 25.8\% \\
 
 \subsection{Practical Filtering}
 
-We now evaluate the pre-refinement filter from Section 2.4. Table~\ref{tab:filtering} reports the combo filter for $K \in \{3, 8, 15\}$ at both thresholds, alongside the raw-latent-geometry baselines (Section 2.4). $K$=8 and $K$=15 are the reproducible headline operating points, at 4Å and 2Å respectively ($K$=3's combo cleared the 80\% good\_kept bar on the selection set at 85.2\% but dropped to 77.5\% on held-out test---a genuine generalization failure rather than a threshold artifact): $K$=8 flags 16.5\% of test poses while retaining 91.1\% of native-like conformations (precision 0.803); $K$=15 flags 15.7\% while retaining 93.0\% (precision 0.935). Recall is modest at both (0.21, 0.17)---a deliberate precision-first design choice, since retaining native-like poses matters more than catching every poor one for a pre-refinement filter.
+We now evaluate the pre-refinement filter from Section 2.4. Table~\ref{tab:filtering} reports the combo filter for $K \in \{3, 8, 15\}$ at both thresholds, alongside the raw-latent-geometry baselines (Section 2.4). $K$=8 and $K$=15 are the reproducible headline operating points, at 4Å and 2Å respectively ($K$=3's combo cleared the 80\% good\_kept bar on the selection set at 85.2\% but dropped to 77.5\% on held-out test---a genuine generalization failure rather than a threshold artifact, and one shared by every $K<8$ we trained, not just $K$=3; Appendix~\ref{app:full-filtering}): $K$=8 flags 16.5\% of test poses while retaining 91.1\% of native-like conformations (precision 0.803); $K$=15 flags 15.7\% while retaining 93.0\% (precision 0.935). Recall is modest at both (0.21, 0.17)---a deliberate precision-first design choice, since retaining native-like poses matters more than catching every poor one for a pre-refinement filter.
 
 Neither raw-latent-geometry baseline family reaches the good\_kept $\ge$ 80\% target at either threshold (0 of 65,535 candidate-union combinations clear it), so Table~\ref{tab:filtering} reports each baseline's closest achievable point instead---well below what $K$=8/$K$=15 achieve while flagging fewer poses.
 
@@ -169,11 +172,11 @@ The SAE's sparse features are not just useful for filtering---they are individua
 
 Table~\ref{tab:filtering}'s $K$=8 combo filter is a union of 16 candidate features (Section 2.4); we highlight two with sharply contrasting structural signatures for detailed interpretation. Feature 51 fires on 711 test poses, 99.3\% of which come from a single thrombin case pair \citep{dicera1995} (PDB 1AE8$\to$1D9I \citep{desimone1997,krishnan2000}, 706/711; a second thrombin pair accounts for the remaining 5), at precision 0.809 with a sentinel rate of 86.4\%. This is not indiscriminate case detection: the feature fires on just 9.5\% of that case's poses and 10.8\% of its bad poses. Under the stricter, standard 2Å native-pose criterion, precision is perfect: all 711 flagged poses are non-native (0 false positives). Its highest-activating poses (Figure~\ref{fig:features}) show a case-specific rotational failure: the ligand's sterically bulky substituent, which should point toward Leu99, instead points toward Ala190---both residues lining the S1/S2 subsites adjacent to the catalytic triad \citep{bode1989}. This misorientation is severe enough that most flagged poses fall outside any refinable basin.
 
-Feature 84 tells a different story. It fires on 827 poses, 94.3\% concentrated in a single urokinase (uPA) case pair \citep{spraggon1995} (PDB 2VIO$\to$1C5W \citep{frederickson2008,katz2000}, 780/827)---the same catalytic serine-protease fold family as thrombin---at precision 0.911 with a sentinel rate of 28.5\%, \emph{below} the population baseline; at the 2Å native-pose criterion, precision rises to 0.975 (806/827). Its highest-activating poses show the ligand correctly oriented but translationally displaced within the binding pocket; energies converge to real, physically stable values (clustered around $-9{,}300$ to $-9{,}700$ kcal/mol) rather than the sentinel value. On the 20 most confidently native poses for this case (RMSD $<$0.4Å), feature 84's activation is exactly 0.0000---the feature is silent on good poses rather than weakly active everywhere.
+Feature 84 tells a different story. It fires on 827 poses, 94.3\% concentrated in a single urokinase (uPA) case pair \citep{spraggon1995} (PDB 2VIO$\to$1C5W \citep{frederickson2008,katz2000}, 780/827)---the same catalytic serine-protease fold family as thrombin---at precision 0.911 with a sentinel rate of 28.5\%, \emph{below} the population baseline; at the 2Å native-pose criterion, precision rises to 0.975 (806/827). Its highest-activating poses show the ligand correctly oriented but translationally displaced within the binding pocket; energies converge to real, physically stable values (clustered around $-9{,}300$ to $-9{,}700$ kcal/mol) rather than the sentinel value. On the 20 most confidently native poses for this case (RMSD $<$0.4Å), feature 84's activation is exactly 0.0000---the feature is silent on good poses.
 
-Together the two features illustrate a rotational-vs-translational split in the geometric errors the SAE decomposes into distinct, monosemantic features: severe rotational misorientation that falls outside any refinable basin (Feature 51), and milder translational displacement that minimization tolerates (Feature 84)---consistent with the monosemanticity hypothesis that sparse features encode distinct failure phenomena rather than one distributed correlate of pose quality \citep{templeton2024,adams2025,clark2026,bricken2023}.
+Together the two features illustrate a rotational-vs-translational split in the geometric errors the SAE decomposes into distinct, monosemantic features: severe rotational misorientation that falls outside any refinable basin (Feature 51), and milder translational displacement that minimization tolerates (Feature 84)---consistent with the monosemanticity hypothesis that sparse features encode distinct failure phenomena \citep{templeton2024,adams2025,clark2026,bricken2023}.
 
-Case-specific concentration is not unique to Features 51 and 84: across all 16 candidates in the $K$=8 combo (Table~\ref{tab:case_concentration}, test set), 5 concentrate $\geq$90\% of firings in a single case pair and 12 concentrate $\geq$50\%, spanning four structurally and functionally distinct targets---the two proteases already discussed, a phosphatase (PTP1B), and an ionotropic glutamate receptor (GluR5)---rather than one fold family. A mirror-image search (features preferring native-like poses) found nothing comparably precise or concentrated, and the induced-fit receptor-loop flexibility visible in Feature 51's poses (Figure~\ref{fig:features}) is not diagnostic---the same spread appears in the case's most confidently native poses.
+Case-specific concentration is not unique to Features 51 and 84: across all 16 candidates in the $K$=8 combo (Table~\ref{tab:case_concentration}, test set), 5 concentrate $\geq$90\% of firings in a single case pair and 12 concentrate $\geq$50\%, spanning four structurally and functionally distinct targets---the two proteases already discussed, a phosphatase (PTP1B), and an ionotropic glutamate receptor (GluR5)---rather than one fold family. A mirror-image search (features preferring native-like poses) found nothing comparably precise or concentrated.
 
 \begin{table}[!ht]
 \caption{\small Case-concentration of the $K$=8 combo filter's 16 candidate features, by dominant protein target (test set).}
@@ -210,6 +213,136 @@ This work was supported by a Rabi Scholars Program stipend (Columbia University)
 
 \bibliography{references}
 \bibliographystyle{plainnat}
+
+\newpage
+\appendix
+\section{Appendix}
+
+\subsection{Full case-concentration breakdown for the $K$=8 combo filter}
+\label{app:case-breakdown}
+
+Table~\ref{tab:case_full} extends Table~\ref{tab:case_concentration} to all 16 individual candidate features (test set), rather than aggregating by protein target. All 16 are members of the deployed $K$=8 combo (Section 3.2).
+
+\begin{table}[!ht]
+\caption{\small Per-feature case-concentration for all 16 candidates in the $K$=8 4Å combo filter (test set), sorted by dominant-case \%.}
+\label{tab:case_full}
+\centering
+\begin{small}
+\begin{tabular}{cccccc}
+\toprule
+Feature & $n$ firing & Precision & Dominant case & Dom.\ \% & \# cases \\
+\midrule
+43  & 196  & 0.964 & GluR5 (3fv1$\to$3fuz)    & 100.0 & 1 \\
+51  & 711  & 0.809 & Thrombin (1ae8$\to$1d9i) & 99.3  & 2 \\
+98  & 482  & 0.263 & PTP1B (1c84$\to$2h4g)    & 98.3  & 2 \\
+2   & 841  & 0.735 & uPA (2vio$\to$1c5w)      & 95.5  & 3 \\
+84  & 827  & 0.911 & uPA (2vio$\to$1c5w)      & 94.3  & 3 \\
+91  & 587  & 0.876 & Thrombin (1gj5$\to$1d3d) & 83.5  & 5 \\
+100 & 958  & 0.902 & Thrombin (1gj5$\to$1d3d) & 80.2  & 3 \\
+28  & 25   & 0.720 & GluR5 (3fv1$\to$3fuz)    & 76.0  & 2 \\
+102 & 493  & 0.813 & GluR5 (3fv1$\to$3fuz)    & 68.2  & 4 \\
+53  & 179  & 0.480 & uPA (2vio$\to$1c5w)      & 64.8  & 3 \\
+10  & 594  & 0.827 & Thrombin (1gj5$\to$1d3d) & 56.6  & 5 \\
+85  & 3709 & 0.942 & Thrombin (1ae8$\to$1d9i) & 52.1  & 5 \\
+71  & 1718 & 0.574 & Thrombin (1ae8$\to$1d9i) & 49.5  & 5 \\
+12  & 446  & 0.863 & uPA (2vio$\to$1c5w)      & 42.2  & 5 \\
+50  & 360  & 0.742 & Thrombin (1ae8$\to$1d9i) & 41.9  & 5 \\
+118 & 78   & 0.500 & Thrombin (1ae8$\to$1d9i) & 34.6  & 6 \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\subsection{Mirror-image feature search}
+\label{app:mirror}
+
+Section 3.4 reports that a search for the mirror-image case---features that prefer native-like poses rather than flagging bad ones---found nothing comparably precise or concentrated. The best such feature reached only 55.3\% precision at 1.6\% recall (4Å label) and 22.2\% precision at 11.1\% recall (2Å label), far below every feature in Table~\ref{tab:case_full}. This asymmetry is consistent with the SAE's TopK sparsity favoring high-precision detectors for rare, structurally distinctive failure modes over the more diffuse signal of "everything went right."
+
+\subsection{Full $K$ sweep diagnostics}
+\label{app:full-sweep}
+
+Table~\ref{tab:full_diag} extends Table~\ref{tab:diagnostics} to all seven trained $K$ values. Dead-feature rate is not monotonic in $K$: it is worst at $K$=1 (80.8\%, where the single-active-feature constraint likely dominates), falls to near zero for $K \in \{3,6,8\}$, rises again for $K \in \{15,20\}$, and partially recovers at $K$=30. The fixed-auxk explanation offered in Section 3.1 for the $K$=3/8-vs-15 comparison is therefore only a partial account of this pattern, not a complete one---the full sweep suggests at least two distinct regimes (extreme-sparsity starvation at very low $K$, and revival-budget saturation at high $K$) rather than a single monotonic cause.
+
+\begin{table}[!ht]
+\caption{\small auPR, FVE, and dead-feature rate across the full trained $K$ sweep (test set).}
+\label{tab:full_diag}
+\centering
+\begin{small}
+\begin{tabular}{cccccc}
+\toprule
+$K$ & auPR (4Å) & auPR (2Å) & FVE & Dead \% \\
+\midrule
+1  & 0.660 & 0.838 & $-$0.2\% & 80.8\% \\
+3  & 0.709 & 0.858 & 33.7\% & 2.5\%  \\
+6  & 0.737 & 0.867 & 49.5\% & 0.8\%  \\
+8  & 0.719 & 0.821 & 62.0\% & 1.7\%  \\
+15 & 0.750 & 0.846 & 90.0\% & 25.8\% \\
+20 & 0.749 & 0.846 & 98.0\% & 30.8\% \\
+30 & 0.742 & 0.810 & 100.0\% & 16.7\% \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\subsection{Case-concentration for the $K$=15 2Å combo}
+\label{app:k15-breakdown}
+
+Table~\ref{tab:k15_breakdown} reports the same case-concentration analysis as Table~\ref{tab:case_full}, but for the $K$=15 2Å headline combo's 4 features rather than $K$=8's 16. This combo is less case-locked overall---two of its four features spread across 5--6 distinct cases rather than concentrating like most of $K$=8's candidates---except for Feature 119, which is both small ($n$=76) and perfectly case-specific. Feature 81 is nominally part of the combo but flags zero test poses (Section 3.1), consistent with it being dead on test.
+
+\begin{table}[!ht]
+\caption{\small Case-concentration for the $K$=15 2Å combo filter's 4 features (test set).}
+\label{tab:k15_breakdown}
+\centering
+\begin{small}
+\begin{tabular}{cccccc}
+\toprule
+Feature & $n$ firing & Precision & Dominant case & Dom.\ \% & \# cases \\
+\midrule
+119 & 76   & 1.000 & Thrombin (1ae8$\to$1d9i) & 100.0 & 1 \\
+101 & 9235 & 0.948 & GluR5 (3fv1$\to$3fuz)    & 58.6  & 6 \\
+23  & 1472 & 0.849 & uPA (2vio$\to$1c5w)      & 53.6  & 5 \\
+81  & 0    & ---   & (dead on test)           & ---   & 0 \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\subsection{Full $K$ sweep: does the selection-set operating point generalize to test?}
+\label{app:full-filtering}
+
+Section 3.2 shows $K$=3's combo clears the 80\% good\_kept bar on the selection set (85.2\%) but fails on held-out test (77.5\%). Table~\ref{tab:full_filtering} repeats this selection-vs-test comparison for the full $K$ sweep at 4Å. Every combo clears the bar on the selection set (by construction), but only $K \geq 8$ reliably holds up on test---$K \in \{1, 3, 6\}$ all drop below 80\% on test, with $K$=6 borderline (79.9\%). This is a systematic pattern, not an isolated failure at $K$=3: the selection procedure generalizes reliably once $K$ is large enough, and $K$=8 is the smallest $K$ at which it consistently does.
+
+\begin{table}[!ht]
+\caption{\small Selection-set vs.\ test-set good\_kept for the winning combo at each trained $K$ (4Å).}
+\label{tab:full_filtering}
+\centering
+\begin{small}
+\begin{tabular}{ccccc}
+\toprule
+$K$ & Selection good\_kept & Test good\_kept & Test precision & Test recall \\
+\midrule
+1  & 82.4\% & 75.6\% & 0.575 & 0.191 \\
+3  & 85.2\% & 77.5\% & 0.698 & 0.301 \\
+6  & 82.8\% & 79.9\% & 0.754 & 0.355 \\
+8  & 83.6\% & 91.1\% & 0.803 & 0.210 \\
+15 & 80.8\% & 95.9\% & 0.879 & 0.171 \\
+20 & 84.9\% & 86.1\% & 0.621 & 0.132 \\
+30 & 82.2\% & 94.7\% & 0.817 & 0.137 \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+\subsection{Full protein system list}
+\label{app:systems}
+
+The dataset spans 36 case pairs across 23 distinct protein targets (some targets contribute multiple case pairs, e.g.\ thrombin, PTP1B, PIM1).
+
+\begingroup
+\raggedright
+\small
+The full list of case pairs: afab\_2nnq\_afab\_3fr4, ask1\_4bhn\_ask1\_4bie, bace1\_5clm\_bace1\_5ezx, cdk2\_1g5s\_cdk2\_2b55, cdk2\_1pxj\_cdk2\_2btr, chk1\_2brb\_chk1\_2hxl, chk1\_2c3k\_chk1\_2cgu, chk1\_2c3k\_chk1\_2cgx, chk1\_2cgu\_chk1\_2ayp, dhodh\_4jgd\_dhodh\_3u2, dpp4\_1n1m\_HIP740\_dpp4\_2fjp, dpp4\_1n1m\_dpp4\_2oph, fxa\_1wu1\_fxa\_1xkb, glur5\_3fv1\_glur5\_3fuz, gsk3b\_3sd0\_gsk3b\_4ach, hivrt\_2b5j\_hivrt\_1c0u, hsd1\_2irw\_hsd1\_3ch6, hsp90\_1yet\_hsp90\_2byi, mdm2\_3jzk\_mdm2\_4zyf, pde5\_4md6\_pde5\_3shy, pdk\_3sc1\_pdk\_3nun, pim1\_2xiz\_pim1\_4lmu, pim1\_2xj2\_pim1\_4enx, pim1\_3vbt\_pim1\_4lmu, pim1\_4lmu\_pim1\_4bzo, ptp1b\_1c84\_ptp1b\_1xbo, ptp1b\_1c84\_ptp1b\_2h4g, ptp1b\_1no6\_ptp1b\_1pyn, rho\_2esm\_rho\_2etk, rock1\_4yvc\_rock1\_5wne, throm\_1ae8\_throm\_1d9i, throm\_1gj5\_throm\_1d3d, throm\_1k21\_throm\_1d3d, tryp\_2bm2\_tryp\_3v7t, tryp\_5f03\_tryp\_2za5, upa\_2vio\_upa\_1c5w. The 6 test-set systems (Section 3.4) are throm\_1ae8\_throm\_1d9i, throm\_1gj5\_throm\_1d3d, glur5\_3fv1\_glur5\_3fuz, upa\_2vio\_upa\_1c5w, ptp1b\_1c84\_ptp1b\_2h4g, and hsd1\_2irw\_hsd1\_3ch6.
+\endgroup
 
 \newpage
 \input{checklist.tex}
