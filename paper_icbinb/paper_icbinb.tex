@@ -111,7 +111,7 @@ $K$ & Selection good\_kept & Test good\_kept & Test precision & Test recall \\
 \end{small}
 \end{table}
 
-As a control, we ran the identical selection procedure on 500 random unit directions and all 60 signed raw latent axes in place of SAE features. Neither baseline family reached the 80\% good\_kept bar on test at all (0 of 65{,}535 candidate-union combinations), so the low-$K$ SAE filters are not simply behaving like unstructured linear directions---they are learning something, just not something the selection procedure can certify reliably at low $K$.
+As a control, we ran the identical selection procedure on 500 random unit directions and all 60 signed raw latent axes in place of SAE features. Neither baseline family reached the 80\% good\_kept bar on test at all (0 of 65{,}535 candidate-union combinations; each family's closest achievable operating point is reported in Appendix~\ref{app:baseline}), so the low-$K$ SAE filters are not simply behaving like unstructured linear directions---they are learning something, just not something the selection procedure can certify reliably at low $K$.
 
 \section{Reason for Failure}
 
@@ -125,5 +125,32 @@ The practical upshot is a genuine tension for anyone deploying SAE-based filters
 
 \bibliographystyle{plainnat}
 \bibliography{references}
+
+\appendix
+
+\section{Raw-latent-geometry control: full baseline results}
+\label{app:baseline}
+
+To confirm that the generalization gap in Section~\ref{sec:generalize} reflects something the SAE decomposition is doing, rather than an artifact of the selection-and-filter procedure itself, we applied the identical train/select/test discipline (Section 2, Filtering) to two raw-latent-geometry baselines in place of SAE features: 500 random unit directions in the 30D VAE latent space, and all 60 signed raw latent axes (both positive and negative directions of each of the 30 dimensions). Table~\ref{tab:baseline} reports each baseline family's closest achievable operating point at both RMSD thresholds used in the underlying dataset.
+
+\begin{table}[!ht]
+\caption{Raw-latent-geometry baselines' closest achievable operating point under the identical selection discipline (test set). No combination from either family reaches the 80\% good\_kept target used to select SAE filter combos.}
+\label{tab:baseline}
+\centering
+\begin{small}
+\begin{tabular}{llcccc}
+\toprule
+Threshold & Source & \% Flagged & Precision & Recall & good\_kept \\
+\midrule
+4\r{A} & Random directions (best) & 33.7 & 0.605 & 0.321 & 63.6\% \\
+4\r{A} & Raw latent axes (best)   & 27.8 & 0.727 & 0.319 & 79.2\% \\
+2\r{A} & Random directions (best) & 33.7 & 0.824 & 0.325 & 59.7\% \\
+2\r{A} & Raw latent axes (best)   & 27.8 & 0.857 & 0.280 & 72.8\% \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+Both baseline families come reasonably close to the SAE filters' precision at a comparable flag rate---raw latent axes even edge out low-$K$ SAE precision at 2\r{A} (0.857 vs.\ SAE $K$=3's 0.791)---but neither ever clears the 80\% good\_kept bar across all 65{,}535 candidate-union combinations searched per family, at either threshold. This rules out the simplest alternative explanation for Section~3.2's low-$K$ generalization failure: it is not that \emph{any} linear direction in this latent space produces a selection-set-vs-test gap of similar severity. The SAE decomposition is finding structure that plain latent geometry does not; the failure specific to low $K$ is a property of how TopK sparsity interacts with the candidate-selection procedure, not a property of the latent space itself.
 
 \end{document}
