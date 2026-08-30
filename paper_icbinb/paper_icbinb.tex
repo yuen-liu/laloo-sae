@@ -1,0 +1,129 @@
+\documentclass{article}
+
+% ICBINB 2026 style (workshop template, double-blind track).
+\usepackage[dblblindworkshop]{neurips_2026}
+\workshoptitle{I Can't Believe It's Not Better (ICBINB): Failure Modes of AI in Biology}
+\raggedbottom
+\setlength{\textfloatsep}{3pt plus 2pt minus 2pt}
+\setlength{\floatsep}{2pt plus 1pt minus 1pt}
+\setlength{\intextsep}{1pt plus 1pt minus 1pt}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+
+\title{Sparsity's Hidden Cost: Selection-Set Overfitting and Lost Predictive Power in Sparse Autoencoder Pose Filters}
+
+\author{%
+  Anonymous Author(s) \\
+  Affiliation \\
+  Address \\
+  \texttt{email} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Sparse autoencoders (SAEs) are increasingly used to decompose neural representations into interpretable features, and the implicit assumption is that this comes cheaply: reconstruction fidelity can be made arbitrarily high, so little should be lost relative to the dense representation. We tested this assumption in a concrete deployment setting---filtering poor docking poses from a physics-informed protein-ligand docking pipeline's variational autoencoder (VAE) latent space---and found it does not hold. Across a $K\in\{1,3,6,8,15,20,30\}$ sweep of TopK SAEs, (1) raw dense latents match or beat every trained SAE on pose-quality classification (auPR), even at $K$ where fraction-of-variance-explained (FVE) reaches 90--100\%, and (2) SAE-derived pose filters selected via a held-out selection set systematically fail to generalize to test at low $K$---clearing an 80\% good-pose-retention bar on selection but missing it on test for every $K\le6$ we trained, while only $K\ge8$ holds up reliably. Both failures trace to the same mechanism: TopK sparsity concentrates each pose's code onto a handful of the largest activations, which both discards class-discriminative structure that does not land in the top-$K$ and starves the feature-selection procedure of enough firing examples per candidate to estimate precision reliably. The $K$ values that are most aggressively sparse---and so, by the usual argument, most interpretable---are exactly the ones whose downstream filters cannot be trusted without an explicit generalization check. We report this as a cautionary result for anyone deploying SAE-based filters in scientific pipelines: reconstruction fidelity is not a proxy for either predictive power or selection reliability, and both must be checked directly, per $K$, before deployment.
+\end{abstract}
+
+\section{Problem}
+
+Sparse autoencoders are appealing for scientific pipelines specifically because they promise interpretability without sacrificing the underlying representation's utility: in principle, an SAE with enough hidden units and a small enough sparsity constraint can reconstruct the dense representation almost perfectly, so any information present in the dense code should still be recoverable from the sparse one. This motivates a natural expectation for any downstream use of an SAE code in place of the dense latent it was trained on: performance on a downstream task built from the sparse code should be no worse than performance built directly from the dense latent, at least once reconstruction fidelity is reasonably high.
+
+We tested this expectation in a concrete, practically motivated setting. A physics-informed protein-ligand docking pipeline (Schr\"odinger's IFD-ML, combining a VAE with diffusion-based conformational sampling) generates thousands of candidate poses per complex, each represented by a 30-dimensional continuous VAE latent vector, and each requiring expensive downstream energy minimization regardless of quality. A natural, practically valuable use of an SAE trained on this latent space is a pre-refinement filter: use SAE-derived features, rather than the raw latent, to flag likely-poor poses before they consume refinement compute. This requires two things to hold: the SAE code should support pose-quality classification (measured by area under the precision-recall curve, auPR) at least as well as the raw latent, and a filter selected on held-out data should generalize reliably to a separate test set. We asked whether both hold across a realistic sweep of sparsity levels, and found that neither does, at exactly the $K$ values where the resulting code is sparsest and therefore most interpretable.
+
+\section{Proposed Approach}
+
+We trained TopK SAEs \citep{adams2025} on 435{,}069 docking poses across 36 protein-ligand systems, split by case (not pose) into $\sim$70/15/15 train/validation/test to prevent leakage. Each SAE uses a $4\times$ expansion (30D input $\to$ 120D hidden $\to$ 30D reconstruction); the TopK operation keeps only the $K$ largest hidden activations per example and zeros the rest, with reconstruction loss as the sole training objective. The pre-encoder bias is initialized to the training-set mean of normalized activations and subtracted before encoding, following \citet{simon2026}'s dead-feature mitigation. We swept $K\in\{1,3,6,8,15,20,30\}$, 5 seeds per $K$, selecting the best run per $K$ by validation loss.
+
+We evaluated two downstream tasks on the resulting codes, both on a held-out test set never touched during training or selection:
+
+\textbf{Classification.} Logistic regression classifiers (class-balanced) were fit to predict bad-pose vs.\ good-pose (RMSD $\le$ 4\r{A} native-like, following \citet{shim2022}) from (a) the 30D normalized raw VAE latent (L2 penalty) and (b) the 120D SAE activations for each trained $K$ (L1 penalty). We report test-set auPR, our primary metric given the 63.4\% bad-pose base rate.
+
+\textbf{Filtering.} For each $K$, we built a pre-refinement filter using a three-way train/select/test discipline: per-feature F1-maximizing activation thresholds and precision-based candidate ranking (requiring recall $>$0.02 to exclude degenerate picks) were fit on a pooled train+validation selection set; the top 16 candidates were then searched over all subset unions, on that same selection set, for the union maximizing recall subject to retaining $\ge$80\% of native-like (good) poses. The winning union was applied exactly once to test. Here we report what happens when this procedure is applied uniformly across the full $K$ sweep, rather than restricting to the small number of $K$ values a practitioner would ultimately consider deploying.
+
+\section{Observed Outcome}
+
+\subsection{Sparsity provides no consistent classification lift}
+
+Table~\ref{tab:aupr} reports auPR and FVE across the full $K$ sweep. Raw dense latents (auPR 0.770 at the 4\r{A} threshold) beat every trained SAE $K$ at this threshold, including $K$=30, whose FVE reaches 100\%---near-perfect reconstruction does not translate into matching, let alone exceeding, the raw latent's classification performance. FVE grows essentially monotonically with $K$; auPR does not track it at all: $K$=6 (FVE 49.5\%) modestly \emph{outperforms} $K$=15 (FVE 90.0\%) on 4\r{A} auPR, and no $K$ tested closes the gap to the raw latent.
+
+\begin{table}[!ht]
+\caption{auPR and FVE, raw latents vs.\ SAE $K$ (test set, full sweep).}
+\label{tab:aupr}
+\centering
+\begin{small}
+\begin{tabular}{lcccc}
+\toprule
+Rep. & auPR (4\r{A}) & auPR (2\r{A}) & FVE & Dead \% \\
+\midrule
+Raw latents & 0.770 & 0.855 & --- & --- \\
+SAE $K$=1  & 0.660 & 0.838 & $-$0.2\% & 80.8\% \\
+SAE $K$=3  & 0.709 & 0.858 & 33.7\% & 2.5\% \\
+SAE $K$=6  & 0.737 & 0.867 & 49.5\% & 0.8\% \\
+SAE $K$=8  & 0.719 & 0.821 & 62.0\% & 1.7\% \\
+SAE $K$=15 & 0.750 & 0.846 & 90.0\% & 25.8\% \\
+SAE $K$=20 & 0.749 & 0.846 & 98.0\% & 30.8\% \\
+SAE $K$=30 & 0.742 & 0.810 & 100.0\% & 16.7\% \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+At the 2\r{A} threshold two SAE $K$'s (3 and 6) edge past the raw latent by a small margin (0.858 and 0.867 vs.\ 0.855), but this is not a robust win for sparsity: it is not the $K$ with the highest FVE, does not replicate at the 4\r{A} threshold, and---as Section~\ref{sec:generalize} shows---$K$=3 is precisely the regime where downstream filters built from this code fail to generalize. The classification signal, in short, does not scale with reconstruction fidelity in any direction we can exploit.
+
+\subsection{Low-$K$ filters overfit their own selection procedure}
+\label{sec:generalize}
+
+Table~\ref{tab:generalize} reports, for every trained $K$, the good-pose-retention rate (good\_kept) achieved by the winning filter combo on the selection set versus on held-out test, at the 4\r{A} threshold. Every combo clears the 80\% bar on the selection set, by construction of the search. But that guarantee does not carry over to test: $K\in\{1,3,6\}$ all fall short (75.6\%, 77.5\%, and a borderline 79.9\% respectively), while $K\ge8$ holds up reliably (86.1--95.9\%). This is not an isolated failure of one unlucky $K$---it is systematic across every $K$ below 8 that we trained, and the threshold sits precisely between the low-FVE, low-dead-feature regime and the higher-FVE regime where features begin dying at non-trivial rates (Table~\ref{tab:aupr}).
+
+\begin{table}[!ht]
+\caption{Selection-set vs.\ test-set good\_kept for the winning filter combo at each trained $K$ (4\r{A}).}
+\label{tab:generalize}
+\centering
+\begin{small}
+\begin{tabular}{lccccc}
+\toprule
+$K$ & Selection good\_kept & Test good\_kept & Test precision & Test recall \\
+\midrule
+1  & 82.4\% & 75.6\% & 0.575 & 0.191 \\
+3  & 85.2\% & 77.5\% & 0.698 & 0.301 \\
+6  & 82.8\% & 79.9\% & 0.754 & 0.355 \\
+8  & 83.6\% & 91.1\% & 0.803 & 0.210 \\
+15 & 80.8\% & 95.9\% & 0.879 & 0.171 \\
+20 & 84.9\% & 86.1\% & 0.621 & 0.132 \\
+30 & 82.2\% & 94.7\% & 0.817 & 0.137 \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{table}
+
+As a control, we ran the identical selection procedure on 500 random unit directions and all 60 signed raw latent axes in place of SAE features. Neither baseline family reached the 80\% good\_kept bar on test at all (0 of 65{,}535 candidate-union combinations), so the low-$K$ SAE filters are not simply behaving like unstructured linear directions---they are learning something, just not something the selection procedure can certify reliably at low $K$.
+
+\section{Reason for Failure}
+
+Both failures share a mechanism: TopK sparsity forces each pose's 120-dimensional code down to its $K$ largest activations, and $K$ is small precisely where the code is most aggressively sparse and thus most interpretable by the usual argument for using SAEs at all.
+
+\textbf{For classification (Section 4.1):} the class-discriminative direction for ``is this pose good or bad'' need not coincide with the top-$K$ largest-magnitude activations for a given example. TopK hard-thresholding is a magnitude-based, not relevance-based, selection rule---it has no mechanism to preferentially retain the specific latent directions a downstream classifier would find useful, only the directions that happen to be locally largest. High reconstruction fidelity (FVE) certifies that the \emph{code as a whole} recovers the dense latent well on average; it does not certify that any single, small, per-example active subset preserves the specific low-variance directions a linear classifier depends on. This is consistent with $K$=30's near-perfect 100\% FVE still trailing the raw latent on auPR: even when almost nothing is lost on reconstruction, something is still being lost on classification, because the two objectives are not the same objective.
+
+\textbf{For selection generalization (Section 4.2, \S\ref{sec:generalize}):} at low $K$, each pose activates only a handful of the 120 candidate features. Per-feature precision on the pooled train+validation selection set is therefore estimated from a small, noisy sample of firing poses for any single low-$K$ feature, and the combo-search procedure---which searches up to 65{,}535 subset unions of the top 16 candidates for the recall-maximizing combination subject to a retention constraint---has many degrees of freedom with which to fit whatever precision pattern that sampling noise happens to produce on the selection set. This is overfitting via researcher degrees of freedom, except the ``researcher'' here is an automated combinatorial search rather than a human choosing among a handful of options by hand, which makes it substantially easier to miss without an explicit, disciplined train/select/test split of the kind used here. Higher $K$ mitigates this only incidentally: more active features per pose gives each candidate's precision estimate a larger, more stable firing sample, not because higher $K$ is more interpretable---by the field's own standard, it is less so.
+
+The practical upshot is a genuine tension for anyone deploying SAE-based filters in a scientific pipeline: the $K$ values most worth reporting as interpretable, monosemantic decompositions are exactly the $K$ values whose downstream filters are least trustworthy without an explicit, held-out generalization check, and whose classification performance is not guaranteed to match the raw representation even when reconstruction fidelity looks excellent. Neither failure is visible from reconstruction loss or FVE alone; both only appear once the downstream task is evaluated on genuinely held-out data. We report this as a concrete argument for treating FVE as, at best, a necessary and not sufficient diagnostic before deploying an SAE-based filter, and for always including a raw-latent and a held-out generalization baseline alongside any reported SAE result, at every $K$ under consideration rather than only the one ultimately deployed.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
