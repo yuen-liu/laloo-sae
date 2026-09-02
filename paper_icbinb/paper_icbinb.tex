@@ -64,7 +64,7 @@ We evaluated two downstream tasks on the resulting representations, both on a he
 
 \subsection{Sparsity provides no consistent classification lift}
 
-Table~\ref{tab:aupr} reports auPR and FVE across the full $K$ sweep. Raw dense latents (auPR 0.770 at the 4\r{A} threshold) beat every trained SAE $K$ at this threshold, including $K$=30, whose FVE reaches 100\%---near-perfect reconstruction does not translate into matching, let alone exceeding, the raw latent's classification performance. FVE grows essentially monotonically with $K$; auPR does not track it at all: $K$=6 (FVE 49.5\%) modestly \emph{outperforms} $K$=15 (FVE 90.0\%) on 4\r{A} auPR, and no $K$ tested closes the gap to the raw latent.
+Table~\ref{tab:aupr} reports auPR and FVE across the full $K$ sweep. Raw dense latents (auPR 0.770 at the 4\r{A} threshold) beat every trained SAE $K$ at this threshold, including $K$=30, whose FVE reaches 100\%---near-perfect reconstruction does not translate into matching, let alone exceeding, the raw latent's classification performance. FVE grows essentially monotonically with $K$; auPR does not track it at all: $K$=6 (FVE 49.5\%) modestly \emph{outperforms} $K$=15 (FVE 90.0\%) on 2\r{A} auPR, and no $K$ tested closes the gap to the raw latent at either threshold.
 
 \begin{table}[!ht]
 \caption{auPR and FVE, raw latents vs.\ SAE $K$ (test set, full sweep).}
