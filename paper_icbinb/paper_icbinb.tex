@@ -18,6 +18,7 @@
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{graphicx}
+\usepackage{subcaption}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{mathtools}
@@ -127,7 +128,7 @@ Both failures, in short, share a root cause: TopK sparsity forces each pose's 12
 
 The practical upshot is a genuine tension for anyone deploying SAE-based filters in a scientific pipeline: the $K$ values most worth reporting as interpretable, monosemantic decompositions are exactly the $K$ values whose downstream filters are least trustworthy without an explicit, held-out generalization check, and whose classification performance is not guaranteed to match the raw representation even when reconstruction fidelity looks excellent. Neither failure is visible from reconstruction loss or FVE alone; both only appear once the downstream task is evaluated on genuinely held-out data. We report this as a concrete argument for treating FVE as, at best, a necessary and not sufficient diagnostic before deploying an SAE-based filter, and for always including a raw-latent and a held-out generalization baseline alongside any reported SAE result, at every $K$ under consideration rather than only the one ultimately deployed.
 
-We do not read this as a contradiction of the positive results the protein-language-model SAE literature has reported \citep{adams2025,simon2025,zarzecki2025,parsan2025,yu2026}---those results are about the \emph{qualitative} interpretability of individual features, established by inspecting what a feature fires on, and nothing here disputes that TopK SAEs can find monosemantic, human-legible structure in a biological latent space. What our result complicates is the further, usually implicit, step from ``these features are interpretable'' to ``these features are safe to use in place of the dense representation for a downstream task.'' That step is a separate empirical claim, and in our setting it is false at exactly the sparsity levels the interpretability claim is strongest at. Reporting an SAE's qualitative feature interpretability and its downstream reliability are two different experiments, and a pipeline that only runs the first risks deploying a filter whose quantitative behavior was never actually checked. Given how cheaply the second experiment can be added---it is the same train/select/test split already needed for any responsible use of a data-derived filter---we think it should be standard practice alongside, not instead of, feature-level interpretability analysis.
+We do not read this as a contradiction of the positive results the protein-language-model SAE literature has reported \citep{adams2025,simon2025,zarzecki2025,parsan2025,yu2026}---those results are about the \emph{qualitative} interpretability of individual features, established by inspecting what a feature fires on, and nothing here disputes that TopK SAEs can find monosemantic, human-legible structure in a biological latent space. Indeed, in this same $K$=8 decomposition, individual features are cleanly interpretable by exactly that standard: one fires almost exclusively on a single thrombin cross-docking pair, flagging poses where a bulky ligand substituent is rotated toward the wrong catalytic-pocket residue; a second fires on a distinct urokinase case where the ligand is correctly oriented but translationally displaced within the binding pocket. What our result complicates is the further, usually implicit, step from ``these features are interpretable'' to ``these features are safe to use in place of the dense representation for a downstream task.'' That step is a separate empirical claim, and in our setting it is false at exactly the sparsity levels the interpretability claim is strongest at. Reporting an SAE's qualitative feature interpretability and its downstream reliability are two different experiments, and a pipeline that only runs the first risks deploying a filter whose quantitative behavior was never actually checked. Given how cheaply the second experiment can be added---it is the same train/select/test split already needed for any responsible use of a data-derived filter---we think it should be standard practice alongside, not instead of, feature-level interpretability analysis.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
@@ -158,5 +159,27 @@ Threshold & Source & \% Flagged & Precision & Recall & good\_kept \\
 \end{table}
 
 Both baseline families come reasonably close to the SAE filters' precision at a comparable flag rate---raw latent axes even edge out low-$K$ SAE precision at 2\r{A} (0.857 vs.\ SAE $K$=3's 0.791)---but neither ever clears the 80\% good\_kept bar across all 65{,}535 candidate-union combinations searched per family, at either threshold. This rules out the simplest alternative explanation for Section~3.2's low-$K$ generalization failure: it is not that \emph{any} linear direction in this latent space produces a selection-set-vs-test gap of similar severity. The SAE decomposition is finding structure that plain latent geometry does not; the failure specific to low $K$ is a property of how TopK sparsity interacts with the candidate-selection procedure, not a property of the latent space itself.
+
+\section{Qualitative examples of interpretable features}
+\label{app:qualitative}
+
+Figure~\ref{fig:qualitative} illustrates the two $K$=8 features referenced in the Conclusion: each fires almost exclusively on poses from a single protein-ligand case pair, and each corresponds to a distinct, visually identifiable geometric failure. Docked pose shown in orange, reference (native) pose in green.
+
+\begin{figure}[!ht]
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/feature_51_2384.png}
+\caption{Thrombin: rotational misorientation. The ligand's bulky substituent is rotated toward the wrong catalytic-pocket residue.}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\includegraphics[width=\textwidth]{figures/feature_84_11084.png}
+\caption{Urokinase (uPA): translational displacement. The ligand is correctly oriented but shifted within the binding pocket.}
+\end{subfigure}
+\caption{Representative top-activating poses for the two features discussed in the Conclusion.}
+\label{fig:qualitative}
+\end{figure}
 
 \end{document}
